@@ -1,9 +1,10 @@
-use axum::{routing::get, Router};
+use axum::{Router, extract::Query, routing::get};
+use serde::Deserialize;
 use tower_service::Service;
 use worker::*;
 
 fn router() -> Router {
-    Router::new().route("/", get(root))
+    Router::new().route("/convert", get(convert))
 }
 
 #[event(fetch)]
@@ -15,6 +16,11 @@ async fn fetch(
     Ok(router().call(req).await?)
 }
 
-pub async fn root() -> &'static str {
-    "Hello Axum!"
+#[derive(Deserialize)]
+pub struct ConvertParams {
+    url: String,
+}
+
+pub async fn convert(Query(params): Query<ConvertParams>) -> String {
+    format!("Received URL: {}", params.url)
 }
