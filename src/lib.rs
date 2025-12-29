@@ -40,7 +40,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                                 headers.set("Content-Type", "text/yaml; charset=utf-8")?;
                                 headers.set(
                                     "Content-Disposition",
-                                    "attachment; filename=\"clash.yaml\"",
+                                    "attachment; filename=clash.yaml",
                                 )?;
                                 Ok(Response::ok(converted)?.with_headers(headers))
                             }
