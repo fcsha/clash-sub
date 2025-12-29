@@ -7,8 +7,5 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-axum = { version = "0.8", default-features = false, features = ["query"] }
-serde = { version = "1.0", features = ["derive"] }
-tower-service = "0.3.3"
-worker = { version = "0.7", features = ['http', 'axum'] }
-worker-macros = { version = "0.7", features = ['http'] }
+worker = { version = "0.7", features = ["http"] }
+worker-macros = { version = "0.7", features = ["http"] }
