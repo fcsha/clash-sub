@@ -253,7 +253,7 @@ pub fn convert_subscription(content: &str) -> Result<String, ConvertError> {
         port: 7890,
         socks_port: 7891,
         allow_lan: true,
-        mode: "Rule".to_string(),
+        mode: "rule".to_string(),
         log_level: "info".to_string(),
         external_controller: "127.0.0.1:9090".to_string(),
         proxies: all_proxies,
