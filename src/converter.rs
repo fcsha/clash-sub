@@ -174,9 +174,13 @@ pub fn convert_subscription(content: &str) -> Result<String, ConvertError> {
         strategy: None,
     });
 
-    // Build rules - China direct, others proxy
+    // Build rules - GEOSITE rules, China direct, others proxy
     let rules = vec![
-        "GEOIP,LAN,直接连接".to_string(),
+        "GEOSITE,private,直接连接".to_string(),
+        "GEOSITE,CN,直接连接".to_string(),
+        "GEOSITE,apple-cn,直接连接".to_string(),
+        "GEOSITE,steam@cn,直接连接".to_string(),
+        "GEOSITE,category-games@cn,直接连接".to_string(),
         "GEOIP,CN,直接连接".to_string(),
         "MATCH,默认流量".to_string(),
     ];

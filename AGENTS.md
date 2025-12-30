@@ -95,17 +95,28 @@ The converter generates a minimal config with:
 - **全部节点负载组** load-balance group (all proxies)
 - **Dynamic region groups** - Only includes regions that have matching nodes
 - **直接连接** select group (DIRECT only)
-- Simple rules: `GEOIP,LAN,直接连接`, `GEOIP,CN,直接连接`, and `MATCH,默认流量`
+- Comprehensive routing rules with GEOSITE and GEOIP matching
 
 ### Routing Rules
 
-The converter generates simple routing rules:
+The converter generates optimized routing rules for China users:
 
-1. `GEOIP,LAN,直接连接` - LAN IPs go to "直接连接" group (local network)
-2. `GEOIP,CN,直接连接` - China IPs go to "直接连接" group
-3. `MATCH,默认流量` - All other traffic goes to "默认流量" group
+1. `GEOSITE,private,直接连接` - Private networks (RFC1918) go direct
+2. `GEOSITE,CN,直接连接` - China domains go direct
+3. `GEOSITE,apple-cn,直接连接` - Apple China services go direct
+4. `GEOSITE,steam@cn,直接连接` - Steam China CDN (downloads) go direct
+5. `GEOSITE,category-games@cn,直接连接` - China game servers go direct (includes Blizzard CN, Diablo 4 CN, etc.)
+6. `GEOIP,CN,直接连接` - China IPs go direct (fallback for non-matched domains)
+7. `MATCH,默认流量` - All other traffic goes to "默认流量" group
 
-**Note**: GEOIP rules do NOT include `no-resolve` parameter, as DNS resolution is required to determine the IP address for geo-location matching.
+**GEOSITE Benefits:**
+
+- ✅ Domain-based matching (faster than IP lookup)
+- ✅ Covers game platforms: Steam China CDN, Blizzard Battle.net China, Diablo 4 China servers
+- ✅ Apple services optimized for China users
+- ✅ No DNS resolution needed for GEOSITE rules
+
+**Note**: International game servers (Battle.net NA/EU, Diablo 4 international) will match `MATCH,默认流量` and use proxy for better connectivity.
 
 ### YAML Optimization
 
