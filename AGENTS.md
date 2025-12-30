@@ -32,34 +32,59 @@ clash-sub/
 
 ## Conversion Features
 
-### Auto Region Detection
+### Proxy Group Structure
 
-Automatically detects and groups proxies by region based on naming patterns:
+The converter generates a hierarchical group structure:
 
-- `香港-01`, `香港-02` → Group "香港"
-- `US-Server-01`, `US-Server-02` → Group "US-Server"
-- `Japan 01`, `Japan 02` → Group "Japan"
-- `HK_Node_1`, `HK_Node_2` → Group "HK_Node"
-- `SG01`, `SG02` → Group "SG"
+#### 1. 默认流量 (Default Traffic) - Select Group
 
-Supported delimiters: `-`, `_`, ` `, `|`, `·`, `｜`, `#`, `@`, or trailing numbers.
+Main selector group with the following options in order:
 
-### Info Nodes
+- **直接连接** (first option)
+- **全部节点负载组** (all nodes load-balance group)
+- All region load-balance groups (香港负载组, 台湾负载组, 日本负载组, etc.)
+- All individual proxy nodes
 
-Info nodes (traffic, expiry, URL, etc.) are placed in a "信息" load-balance group:
+#### 2. 全部节点负载组 (All Nodes Load-Balance Group)
 
-- `剩余流量: 100GB`
-- `过期时间: 2024-12-31`
-- `最新网址: example.com`
+Contains all proxies with `consistent-hashing` strategy.
+
+#### 3. Region Load-Balance Groups
+
+Fixed region groups with regex filters:
+
+1. 香港负载组 (Hong Kong) - `(?i)港|hk|hongkong|hong kong`
+2. 台湾负载组 (Taiwan) - `(?i)台|tw|taiwan`
+3. 日本负载组 (Japan) - `(?i)日本?|jp|japan`
+4. 新加坡负载组 (Singapore) - `(?i)新|sg|singapore`
+5. 美国负载组 (USA) - `(?i)美|us|usa|united states|america`
+6. 韩国负载组 (Korea) - `(?i)韩|kr|korea`
+7. 英国负载组 (UK) - `(?i)英|uk|britain|united kingdom`
+8. 德国负载组 (Germany) - `(?i)德|de|germany`
+9. 法国负载组 (France) - `(?i)法|fr|france`
+10. 加拿大负载组 (Canada) - `(?i)加|ca|canada`
+11. 澳大利亚负载组 (Australia) - `(?i)澳|au|australia`
+12. 马来西亚负载组 (Malaysia) - `(?i)马来|my|malaysia`
+13. 土耳其负载组 (Turkey) - `(?i)土耳其|tr|turkey`
+14. 阿根廷负载组 (Argentina) - `(?i)阿根廷|ar|argentina`
+15. 其他负载组 (Others) - `.*` (matches all remaining)
+
+Each group uses `include-all: true` with regex filtering.
+
+#### 4. 直接连接 (Direct Connection) - Select Group
+
+Contains only `DIRECT` option for direct connections.
 
 ### Output Configuration
 
-The converter generates a simplified config with:
+The converter generates a config with:
 
 - Fixed settings: `port: 7890`, `socks-port: 7891`, `allow-lan: true`
-- Main "代理" select group containing all region groups
-- Each region as a load-balance group with `consistent-hashing` strategy
-- Simple rules: `GEOIP,CN,DIRECT` and `MATCH,代理`
+- **默认流量** select group (direct connection first, then all load-balance groups, then all proxies)
+- **全部节点负载组** load-balance group (all proxies)
+- 15 fixed region load-balance groups with regex filters and `consistent-hashing` strategy
+- **直接连接** select group (DIRECT only)
+- Simple rules: `GEOIP,CN,DIRECT` and `MATCH,默认流量`
 
 ## API Endpoints
 
