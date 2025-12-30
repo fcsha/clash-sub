@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
@@ -10,16 +11,6 @@ pub struct InputConfig {
 /// Represents the output Clash configuration
 #[derive(Debug, Serialize)]
 pub struct OutputConfig {
-    pub port: u16,
-    #[serde(rename = "socks-port")]
-    pub socks_port: u16,
-    #[serde(rename = "allow-lan")]
-    pub allow_lan: bool,
-    pub mode: String,
-    #[serde(rename = "log-level")]
-    pub log_level: String,
-    #[serde(rename = "external-controller")]
-    pub external_controller: String,
     pub proxies: Vec<Value>,
     #[serde(rename = "proxy-groups")]
     pub proxy_groups: Vec<ProxyGroup>,
@@ -51,6 +42,19 @@ pub fn get_proxy_name(proxy: &Value) -> Option<String> {
     proxy.get("name")?.as_str().map(|s| s.to_string())
 }
 
+/// Check if a region has any matching proxies
+fn has_matching_proxies(proxy_names: &[String], pattern: &str) -> bool {
+    if pattern == ".*" {
+        return true; // "其他" always included
+    }
+
+    if let Ok(re) = Regex::new(pattern) {
+        proxy_names.iter().any(|name| re.is_match(name))
+    } else {
+        false
+    }
+}
+
 /// Error type for conversion
 #[derive(Debug)]
 pub struct ConvertError(pub String);
@@ -72,64 +76,11 @@ pub fn convert_subscription(content: &str) -> Result<String, ConvertError> {
     // Get all proxy names
     let proxy_names: Vec<String> = input.proxies.iter().filter_map(get_proxy_name).collect();
 
-    // Build proxy groups
-    let mut proxy_groups: Vec<ProxyGroup> = Vec::new();
-
-    // 1. 默认流量 (select group)
-    // First option is "直接连接", then all load-balance groups, then all individual proxies
-    let mut default_traffic_proxies: Vec<String> = vec!["直接连接".to_string()];
-
-    // Add all load-balance groups
-    default_traffic_proxies.push("全部节点负载组".to_string());
-    default_traffic_proxies.extend(vec![
-        "香港负载组".to_string(),
-        "台湾负载组".to_string(),
-        "日本负载组".to_string(),
-        "新加坡负载组".to_string(),
-        "美国负载组".to_string(),
-        "韩国负载组".to_string(),
-        "英国负载组".to_string(),
-        "德国负载组".to_string(),
-        "法国负载组".to_string(),
-        "加拿大负载组".to_string(),
-        "澳大利亚负载组".to_string(),
-        "马来西亚负载组".to_string(),
-        "土耳其负载组".to_string(),
-        "阿根廷负载组".to_string(),
-        "其他负载组".to_string(),
-    ]);
-
-    // Add all individual proxies
-    default_traffic_proxies.extend(proxy_names);
-
-    proxy_groups.push(ProxyGroup {
-        name: "默认流量".to_string(),
-        group_type: "select".to_string(),
-        proxies: Some(default_traffic_proxies),
-        include_all: None,
-        filter: None,
-        url: None,
-        interval: None,
-        strategy: None,
-    });
-
-    // 2. 全部节点负载组 (load-balance group with all proxies)
-    proxy_groups.push(ProxyGroup {
-        name: "全部节点负载组".to_string(),
-        group_type: "load-balance".to_string(),
-        proxies: None,
-        include_all: Some(true),
-        filter: None,
-        url: Some("http://www.gstatic.com/generate_204".to_string()),
-        interval: Some(180),
-        strategy: Some("consistent-hashing".to_string()),
-    });
-
-    // 3. Fixed region load-balance groups with regex filters
-    let regions = vec![
+    // Define all possible regions
+    let all_regions = [
         ("香港负载组", "(?i)港|hk|hongkong|hong kong"),
         ("台湾负载组", "(?i)台|tw|taiwan"),
-        ("日本负载组", "(?i)日本?|jp|japan"),
+        ("日本负载组", "(?i)日|jp|japan"),
         ("新加坡负载组", "(?i)新|sg|singapore"),
         ("美国负载组", "(?i)美|us|usa|united states|america"),
         ("韩国负载组", "(?i)韩|kr|korea"),
@@ -144,7 +95,61 @@ pub fn convert_subscription(content: &str) -> Result<String, ConvertError> {
         ("其他负载组", ".*"),
     ];
 
-    for (name, filter) in regions {
+    // Filter regions that have matching proxies
+    let active_regions: Vec<(&str, &str)> = all_regions
+        .iter()
+        .filter(|(_, pattern)| has_matching_proxies(&proxy_names, pattern))
+        .map(|(name, pattern)| (*name, *pattern))
+        .collect();
+
+    // Build proxy groups
+    let mut proxy_groups: Vec<ProxyGroup> = Vec::new();
+
+    // 1. 默认流量 (select group)
+    let mut default_traffic_proxies: Vec<String> =
+        vec!["节点选择".to_string(), "直接连接".to_string()];
+
+    // Add all active load-balance groups
+    default_traffic_proxies.push("全部节点负载组".to_string());
+    default_traffic_proxies.extend(active_regions.iter().map(|(name, _)| name.to_string()));
+
+    proxy_groups.push(ProxyGroup {
+        name: "默认流量".to_string(),
+        group_type: "select".to_string(),
+        proxies: Some(default_traffic_proxies),
+        include_all: None,
+        filter: None,
+        url: None,
+        interval: None,
+        strategy: None,
+    });
+
+    // 2. 节点选择 (select group with all individual proxies)
+    proxy_groups.push(ProxyGroup {
+        name: "节点选择".to_string(),
+        group_type: "select".to_string(),
+        proxies: Some(proxy_names),
+        include_all: None,
+        filter: None,
+        url: None,
+        interval: None,
+        strategy: None,
+    });
+
+    // 3. 全部节点负载组 (load-balance group with all proxies)
+    proxy_groups.push(ProxyGroup {
+        name: "全部节点负载组".to_string(),
+        group_type: "load-balance".to_string(),
+        proxies: None,
+        include_all: Some(true),
+        filter: None,
+        url: Some("http://www.gstatic.com/generate_204".to_string()),
+        interval: Some(180),
+        strategy: Some("consistent-hashing".to_string()),
+    });
+
+    // 4. Active region load-balance groups with regex filters
+    for (name, filter) in active_regions {
         proxy_groups.push(ProxyGroup {
             name: name.to_string(),
             group_type: "load-balance".to_string(),
@@ -157,7 +162,7 @@ pub fn convert_subscription(content: &str) -> Result<String, ConvertError> {
         });
     }
 
-    // 4. 直接连接 (select group with only DIRECT)
+    // 5. 直接连接 (select group with only DIRECT)
     proxy_groups.push(ProxyGroup {
         name: "直接连接".to_string(),
         group_type: "select".to_string(),
@@ -169,25 +174,103 @@ pub fn convert_subscription(content: &str) -> Result<String, ConvertError> {
         strategy: None,
     });
 
-    // Build rules - simple: China direct, others proxy
-    let rules = vec!["GEOIP,CN,DIRECT".to_string(), "MATCH,默认流量".to_string()];
+    // Build rules - China direct, others proxy
+    let rules = vec![
+        "GEOIP,LAN,直接连接".to_string(),
+        "GEOIP,CN,直接连接".to_string(),
+        "MATCH,默认流量".to_string(),
+    ];
 
-    // Build output config with our own settings
+    // Build output config
     let output = OutputConfig {
-        port: 7890,
-        socks_port: 7891,
-        allow_lan: true,
-        mode: "rule".to_string(),
-        log_level: "info".to_string(),
-        external_controller: "127.0.0.1:9090".to_string(),
         proxies: input.proxies,
         proxy_groups,
         rules,
     };
 
     // Serialize to YAML
-    let yaml = serde_yaml::to_string(&output)
+    let mut yaml = serde_yaml::to_string(&output)
         .map_err(|e| ConvertError(format!("Failed to serialize YAML: {}", e)))?;
+
+    // Use YAML merge key to reuse load-balance common config
+    // Find the first load-balance group and add merge anchor
+    let lines: Vec<&str> = yaml.lines().collect();
+    let mut result_lines: Vec<String> = Vec::new();
+    let mut in_first_lb_group = false;
+    let mut first_lb_found = false;
+
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+
+        // Detect first load-balance group (全部节点负载组)
+        if !first_lb_found && line.contains("name: 全部节点负载组") {
+            result_lines.push(line.to_string());
+            in_first_lb_group = true;
+            first_lb_found = true;
+            i += 1;
+            continue;
+        }
+
+        // In first load-balance group, add merge anchor before url
+        if in_first_lb_group && line.contains("url: http://www.gstatic.com/generate_204") {
+            // Get indent and add merge anchor line
+            let indent = line.split("url:").next().unwrap();
+            result_lines.push(format!("{}<<: &lb_common", indent));
+            result_lines.push(line.to_string());
+            in_first_lb_group = false;
+            i += 1;
+            continue;
+        }
+
+        // For subsequent load-balance groups, replace the three lines with merge reference
+        if first_lb_found
+            && !in_first_lb_group
+            && line.contains("type: load-balance")
+            && i + 1 < lines.len()
+        {
+            result_lines.push(line.to_string());
+            i += 1;
+
+            // Skip to find url/interval/strategy block and replace with merge
+            let mut replaced = false;
+            while i < lines.len() {
+                let current = lines[i];
+
+                if current.contains("url: http://www.gstatic.com/generate_204") {
+                    // Found the config block, get indent
+                    let indent = current.split("url:").next().unwrap();
+                    // Add merge reference
+                    result_lines.push(format!("{}<<: *lb_common", indent));
+
+                    // Skip the next 2 lines (interval and strategy)
+                    i += 3;
+                    replaced = true;
+                    break;
+                } else if current.contains("name:") || current.trim().starts_with('-') {
+                    // Reached next group, stop
+                    break;
+                } else {
+                    result_lines.push(current.to_string());
+                    i += 1;
+                }
+            }
+
+            if !replaced {
+                continue;
+            }
+            continue;
+        }
+
+        result_lines.push(line.to_string());
+        i += 1;
+    }
+
+    yaml = result_lines.join("\n");
+    if !yaml.ends_with('\n') {
+        yaml.push('\n');
+    }
 
     Ok(yaml)
 }
