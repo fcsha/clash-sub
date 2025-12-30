@@ -1,4 +1,4 @@
-mod converter;
+pub mod converter;
 
 use converter::convert_subscription;
 use worker::*;
