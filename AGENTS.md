@@ -111,29 +111,33 @@ The converter generates simple routing rules:
 
 The converter uses YAML merge keys (`<<:`) to significantly reduce redundancy for load-balance group configurations.
 
-**First load-balance group** (defines the anchor):
+**Common config defined at the top** (hidden key with anchor):
 
 ```yaml
-- name: 全部节点负载组
-  type: load-balance
-  include-all: true
-  <<: &lb_common
-    url: http://www.gstatic.com/generate_204
-    interval: 180
-    strategy: consistent-hashing
+.lb_common: &lb_common
+  url: http://www.gstatic.com/generate_204
+  interval: 180
+  strategy: consistent-hashing
+
+proxies:
+  # ... all proxies here
+
+proxy-groups:
+  - name: 全部节点负载组
+    type: load-balance
+    include-all: true
+    <<: *lb_common
+
+  - name: 香港负载组
+    type: load-balance
+    include-all: true
+    filter: "(?i)港|hk|hongkong|hong kong"
+    <<: *lb_common
+
+  # ... all other load-balance groups use <<: *lb_common
 ```
 
-**Subsequent load-balance groups** (merge the common config):
-
-```yaml
-- name: 香港负载组
-  type: load-balance
-  include-all: true
-  filter: "(?i)港|hk|hongkong|hong kong"
-  <<: *lb_common
-```
-
-Instead of repeating 3 lines (url, interval, strategy) for each group, we only need 1 line (`<<: *lb_common`). This **reduces file size by ~60%** for the proxy-groups section and makes the config much more maintainable.
+The key `.lb_common` starts with a dot, making it a hidden/ignored key in Clash. All load-balance groups reference it with `<<: *lb_common`, which merges in the url, interval, and strategy fields. This **reduces file size by ~60%** for the proxy-groups section and makes maintenance trivial - change once, applies everywhere.
 
 ### Key Features
 

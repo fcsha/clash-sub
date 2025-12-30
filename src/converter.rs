@@ -192,61 +192,37 @@ pub fn convert_subscription(content: &str) -> Result<String, ConvertError> {
     let mut yaml = serde_yaml::to_string(&output)
         .map_err(|e| ConvertError(format!("Failed to serialize YAML: {}", e)))?;
 
-    // Use YAML merge key to reuse load-balance common config
-    // Find the first load-balance group and add merge anchor
+    // Add common load-balance config at the top with anchor
+    let lb_common = ".lb_common: &lb_common\n  url: http://www.gstatic.com/generate_204\n  interval: 180\n  strategy: consistent-hashing\n\n";
+    yaml = lb_common.to_string() + &yaml;
+
+    // Replace url/interval/strategy in all load-balance groups with merge reference
     let lines: Vec<&str> = yaml.lines().collect();
     let mut result_lines: Vec<String> = Vec::new();
-    let mut in_first_lb_group = false;
-    let mut first_lb_found = false;
-
     let mut i = 0;
 
     while i < lines.len() {
         let line = lines[i];
 
-        // Detect first load-balance group (全部节点负载组)
-        if !first_lb_found && line.contains("name: 全部节点负载组") {
-            result_lines.push(line.to_string());
-            in_first_lb_group = true;
-            first_lb_found = true;
-            i += 1;
-            continue;
-        }
-
-        // In first load-balance group, add merge anchor before url
-        if in_first_lb_group && line.contains("url: http://www.gstatic.com/generate_204") {
-            // Get indent and add merge anchor line
-            let indent = line.split("url:").next().unwrap();
-            result_lines.push(format!("{}<<: &lb_common", indent));
-            result_lines.push(line.to_string());
-            in_first_lb_group = false;
-            i += 1;
-            continue;
-        }
-
-        // For subsequent load-balance groups, replace the three lines with merge reference
-        if first_lb_found
-            && !in_first_lb_group
-            && line.contains("type: load-balance")
-            && i + 1 < lines.len()
-        {
+        // Check if this is a load-balance group with url config
+        if line.contains("type: load-balance") {
             result_lines.push(line.to_string());
             i += 1;
 
-            // Skip to find url/interval/strategy block and replace with merge
-            let mut replaced = false;
+            // Process following lines
             while i < lines.len() {
                 let current = lines[i];
 
                 if current.contains("url: http://www.gstatic.com/generate_204") {
-                    // Found the config block, get indent
-                    let indent = current.split("url:").next().unwrap();
-                    // Add merge reference
-                    result_lines.push(format!("{}<<: *lb_common", indent));
+                    // Found url line, get indent
+                    let indent_len = current.len() - current.trim_start().len();
+                    let indent = " ".repeat(indent_len);
+
+                    // Add merge reference instead
+                    result_lines.push(indent + "<<: *lb_common");
 
                     // Skip the next 2 lines (interval and strategy)
                     i += 3;
-                    replaced = true;
                     break;
                 } else if current.contains("name:") || current.trim().starts_with('-') {
                     // Reached next group, stop
@@ -256,15 +232,10 @@ pub fn convert_subscription(content: &str) -> Result<String, ConvertError> {
                     i += 1;
                 }
             }
-
-            if !replaced {
-                continue;
-            }
-            continue;
+        } else {
+            result_lines.push(line.to_string());
+            i += 1;
         }
-
-        result_lines.push(line.to_string());
-        i += 1;
     }
 
     yaml = result_lines.join("\n");
